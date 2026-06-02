@@ -1,0 +1,17 @@
+{
+  "name": "Peter-Daily",
+  "short_name": "Peter-Daily",
+  "description": "Daily stats and streak tracking.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f3ed",
+  "theme_color": "#10231d",
+  "icons": [
+    {
+      "src": "/peter-daily.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

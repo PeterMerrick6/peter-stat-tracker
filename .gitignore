@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.amplify/
+amplify_outputs.json
+vite.log
+vite.err.log
+preview-*.log
+preview-*.err.log
+*.tsbuildinfo
+.env
+.env.*
