@@ -244,6 +244,13 @@ select:focus {
   gap: 12px;
 }
 
+.goal-status-stack {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
 .goal-card h3,
 .goal-settings-card h3,
 .modal-panel h2,
@@ -433,7 +440,6 @@ select:focus {
 }
 
 .text-action {
-  justify-self: end;
   width: fit-content;
   min-height: 0;
   border: 0;
@@ -613,6 +619,40 @@ select:focus {
   gap: 10px;
 }
 
+.widget-goal-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.widget-goal-option {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  border: 1px solid #ded3c4;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fbfaf7;
+  font-weight: 800;
+}
+
+.widget-goal-option.selected {
+  border-color: #3d7f6b;
+  background: #e9f3ef;
+}
+
+.widget-goal-option input {
+  width: 18px;
+  min-height: 18px;
+  accent-color: #3d7f6b;
+}
+
+.widget-goal-option input:disabled + span {
+  color: #9ba69f;
+}
+
 .goal-settings-card {
   display: grid;
   gap: 12px;
@@ -623,6 +663,17 @@ select:focus {
   color: #68746d;
   font-weight: 800;
   text-transform: capitalize;
+}
+
+.reorder-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 44px);
+  gap: 8px;
+}
+
+.compact-icon {
+  width: 44px;
+  height: 38px;
 }
 
 .settings-actions {

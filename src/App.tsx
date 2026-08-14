@@ -1,7 +1,8 @@
 import {
+  ArrowDown,
+  ArrowUp,
   BarChart3,
   CalendarDays,
-  Check,
   ChevronLeft,
   ChevronRight,
   Flame,
@@ -34,6 +35,13 @@ import {
   isGoalEntryComplete,
   sortGoals,
 } from "./lib/goals";
+import {
+  buildWidgetSnapshot,
+  getWidgetGoalLimit,
+  loadWidgetGoalIds,
+  saveAndroidWidgetSnapshot,
+  saveWidgetGoalIds,
+} from "./lib/widgetData";
 
 type Tab = "today" | "history" | "streaks" | "settings";
 
@@ -99,6 +107,7 @@ function AppExperience({
   const [selectedDate, setSelectedDate] = useState(todayInDenver());
   const [isCloudLoading, setIsCloudLoading] = useState(useCloudData);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [widgetGoalIds, setWidgetGoalIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!useCloudData) {
@@ -142,13 +151,33 @@ function AppExperience({
   }, [useCloudData]);
 
   const goals = useMemo(() => sortGoals(data.goals), [data.goals]);
-  const activeGoals = goals.filter((goal) => goal.active && !goal.archivedAt);
+  const activeGoals = useMemo(() => goals.filter((goal) => goal.active && !goal.archivedAt), [goals]);
   const entriesByKey = useMemo(
     () => new Map(data.goalEntries.map((entry) => [getGoalEntryKey(entry.goalId, entry.periodDate), entry])),
     [data.goalEntries],
   );
   const streaks = useMemo(() => buildStreaks(data.goals, data.goalEntries), [data.goals, data.goalEntries]);
   const todaySummary = getGoalSummary(activeGoals, entriesByKey, selectedDate, streaks);
+
+  useEffect(() => {
+    setWidgetGoalIds((current) => {
+      const activeIds = new Set(activeGoals.map((goal) => goal.id));
+      const selected = current.filter((goalId) => activeIds.has(goalId)).slice(0, getWidgetGoalLimit());
+      const nextSelected = selected.length ? selected : loadWidgetGoalIds(data.goals);
+      saveWidgetGoalIds(nextSelected);
+      return nextSelected;
+    });
+  }, [activeGoals, data.goals]);
+
+  useEffect(() => {
+    void saveAndroidWidgetSnapshot(buildWidgetSnapshot(data.goals, data.goalEntries, widgetGoalIds));
+  }, [data.goals, data.goalEntries, widgetGoalIds]);
+
+  function updateWidgetGoalIds(goalIds: string[]) {
+    const nextGoalIds = goalIds.slice(0, getWidgetGoalLimit());
+    saveWidgetGoalIds(nextGoalIds);
+    setWidgetGoalIds(nextGoalIds);
+  }
 
   async function upsertGoal(goal: Goal) {
     const exists = data.goals.some((item) => item.id === goal.id);
@@ -280,8 +309,10 @@ function AppExperience({
           <SettingsView
             storageMode={storageMode}
             goals={goals}
+            widgetGoalIds={widgetGoalIds}
             onSaveGoal={upsertGoal}
             onRemoveGoal={removeGoal}
+            onChangeWidgetGoalIds={updateWidgetGoalIds}
           />
         )}
       </main>
@@ -466,7 +497,14 @@ function GoalCard({
           <h3>{goal.title}</h3>
           <p>{goal.description}</p>
         </div>
-        <StatusPill status={displayStatus} />
+        <div className="goal-status-stack">
+          <StatusPill status={displayStatus} />
+          {(entry.status || entry.value !== null) && (
+            <button className="text-action" type="button" onClick={unlogEntry}>
+              Unlog
+            </button>
+          )}
+        </div>
       </div>
 
       {goal.type === "status" ? (
@@ -489,9 +527,6 @@ function GoalCard({
         </label>
       )}
 
-      <button className="text-action" type="button" onClick={unlogEntry} disabled={!entry.status && entry.value === null}>
-        Unlog
-      </button>
     </article>
   );
 }
@@ -610,16 +645,23 @@ function GoalChart({ goal, entries }: { goal: Goal; entries: GoalEntry[] }) {
 function SettingsView({
   storageMode,
   goals,
+  widgetGoalIds,
   onSaveGoal,
   onRemoveGoal,
+  onChangeWidgetGoalIds,
 }: {
   storageMode: string;
   goals: Goal[];
+  widgetGoalIds: string[];
   onSaveGoal: (goal: Goal) => Promise<void> | void;
   onRemoveGoal: (goalId: string) => Promise<void> | void;
+  onChangeWidgetGoalIds: (goalIds: string[]) => void;
 }) {
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [removeGoal, setRemoveGoal] = useState<Goal | null>(null);
+  const [reorderingGoalId, setReorderingGoalId] = useState<string | null>(null);
+  const activeGoals = goals.filter((goal) => goal.active && !goal.archivedAt);
+  const widgetGoalLimit = getWidgetGoalLimit();
 
   function createGoal() {
     const order = goals.length ? Math.max(...goals.map((goal) => goal.displayOrder)) + 10 : 10;
@@ -650,6 +692,44 @@ function SettingsView({
     setRemoveGoal(null);
   }
 
+  function toggleWidgetGoal(goalId: string) {
+    if (widgetGoalIds.includes(goalId)) {
+      onChangeWidgetGoalIds(widgetGoalIds.filter((item) => item !== goalId));
+      return;
+    }
+
+    if (widgetGoalIds.length >= widgetGoalLimit) {
+      return;
+    }
+
+    onChangeWidgetGoalIds([...widgetGoalIds, goalId]);
+  }
+
+  async function moveGoal(goalId: string, direction: -1 | 1) {
+    const currentIndex = goals.findIndex((goal) => goal.id === goalId);
+    const nextIndex = currentIndex + direction;
+
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= goals.length) {
+      return;
+    }
+
+    const reorderedGoals = [...goals];
+    const [movedGoal] = reorderedGoals.splice(currentIndex, 1);
+    reorderedGoals.splice(nextIndex, 0, movedGoal);
+    const goalsToSave = reorderedGoals
+      .map((goal, index) => ({ ...goal, displayOrder: (index + 1) * 10 }))
+      .filter((goal) => goals.find((currentGoal) => currentGoal.id === goal.id)?.displayOrder !== goal.displayOrder);
+
+    setReorderingGoalId(goalId);
+    try {
+      for (const goal of goalsToSave) {
+        await onSaveGoal(goal);
+      }
+    } finally {
+      setReorderingGoalId(null);
+    }
+  }
+
   return (
     <section className="screen">
       <div className="section-heading">
@@ -668,6 +748,30 @@ function SettingsView({
         </div>
       </div>
 
+      <div className="section-heading compact">
+        <h2>Widget goals</h2>
+        <small>{widgetGoalIds.length} of {widgetGoalLimit}</small>
+      </div>
+
+      <div className="widget-goal-list">
+        {activeGoals.map((goal) => {
+          const selected = widgetGoalIds.includes(goal.id);
+          const disabled = !selected && widgetGoalIds.length >= widgetGoalLimit;
+
+          return (
+            <label className={`widget-goal-option ${selected ? "selected" : ""}`} key={goal.id}>
+              <input
+                type="checkbox"
+                checked={selected}
+                disabled={disabled}
+                onChange={() => toggleWidgetGoal(goal.id)}
+              />
+              <span>{goal.title}</span>
+            </label>
+          );
+        })}
+      </div>
+
       <div className="section-heading">
         <h2>Goals</h2>
         <button className="icon-button" aria-label="Add goal" onClick={createGoal}>
@@ -676,12 +780,20 @@ function SettingsView({
       </div>
 
       <div className="goal-settings-list">
-        {goals.map((goal) => (
+        {goals.map((goal, index) => (
           <article className="goal-settings-card" key={goal.id}>
             <div>
               <h3>{goal.title}</h3>
               <p>{goal.description || "No description"}</p>
               <small>{goal.type} - {goal.cadence}{goal.archivedAt ? " - archived" : ""}</small>
+            </div>
+            <div className="reorder-actions" aria-label={`Reorder ${goal.title}`}>
+              <button className="icon-button compact-icon" aria-label={`Move ${goal.title} up`} onClick={() => moveGoal(goal.id, -1)} disabled={index === 0 || reorderingGoalId !== null}>
+                <ArrowUp size={18} />
+              </button>
+              <button className="icon-button compact-icon" aria-label={`Move ${goal.title} down`} onClick={() => moveGoal(goal.id, 1)} disabled={index === goals.length - 1 || reorderingGoalId !== null}>
+                <ArrowDown size={18} />
+              </button>
             </div>
             <div className="settings-actions">
               <button onClick={() => setEditingGoal(goal)}>Edit</button>

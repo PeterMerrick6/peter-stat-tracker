@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:orientation="vertical"
+    android:paddingLeft="8dp"
+    android:paddingTop="5dp"
+    android:paddingRight="8dp"
+    android:paddingBottom="5dp">
+
+    <TextView
+        android:id="@+id/widget_empty_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:textColor="#68746D"
+        android:textSize="11sp"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/widget_goal_row_1"
+        style="@style/WidgetGoalRow">
+
+        <TextView
+            android:id="@+id/widget_goal_title_1"
+            style="@style/WidgetGoalTitle" />
+
+        <LinearLayout style="@style/WidgetBoxStrip">
+            <TextView android:id="@+id/widget_goal_1_day_1" style="@style/WidgetStatusBox" />
+            <TextView android:id="@+id/widget_goal_1_day_2" style="@style/WidgetStatusBox" />
+            <TextView android:id="@+id/widget_goal_1_day_3" style="@style/WidgetStatusBox" />
+            <TextView android:id="@+id/widget_goal_1_day_4" style="@style/WidgetStatusBox" />
+            <TextView android:id="@+id/widget_goal_1_day_5" style="@style/WidgetStatusBox" />
+            <TextView android:id="@+id/widget_goal_1_day_6" style="@style/WidgetStatusBox" />
+            <TextView android:id="@+id/widget_goal_1_day_7" style="@style/WidgetStatusBox" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/widget_goal_streak_1"
+            style="@style/WidgetGoalStreak" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/widget_goal_row_2"
+        style="@style/WidgetGoalRow">
+
+        <TextView
+            android:id="@+id/widget_goal_title_2"
+            style="@style/WidgetGoalTitle" />
+
+        <LinearLayout style="@style/WidgetBoxStrip">
+            <TextView android:id="@+id/widget_goal_2_day_1" style="@style/WidgetStatusBox" />
+            <TextView android:id="@+id/widget_goal_2_day_2" style="@style/WidgetStatusBox" />
+            <TextView android:id="@+id/widget_goal_2_day_3" style="@style/WidgetStatusBox" />
+            <TextView android:id="@+id/widget_goal_2_day_4" style="@style/WidgetStatusBox" />
+            <TextView android:id="@+id/widget_goal_2_day_5" style="@style/WidgetStatusBox" />
+            <TextView android:id="@+id/widget_goal_2_day_6" style="@style/WidgetStatusBox" />
+            <TextView android:id="@+id/widget_goal_2_day_7" style="@style/WidgetStatusBox" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/widget_goal_streak_2"
+            style="@style/WidgetGoalStreak" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/widget_goal_row_3"
+        style="@style/WidgetGoalRow">
+
+        <TextView
+            android:id="@+id/widget_goal_title_3"
+            style="@style/WidgetGoalTitle" />
+
+        <LinearLayout style="@style/WidgetBoxStrip">
+            <TextView android:id="@+id/widget_goal_3_day_1" style="@style/WidgetStatusBox" />
+            <TextView android:id="@+id/widget_goal_3_day_2" style="@style/WidgetStatusBox" />
+            <TextView android:id="@+id/widget_goal_3_day_3" style="@style/WidgetStatusBox" />
+            <TextView android:id="@+id/widget_goal_3_day_4" style="@style/WidgetStatusBox" />
+            <TextView android:id="@+id/widget_goal_3_day_5" style="@style/WidgetStatusBox" />
+            <TextView android:id="@+id/widget_goal_3_day_6" style="@style/WidgetStatusBox" />
+            <TextView android:id="@+id/widget_goal_3_day_7" style="@style/WidgetStatusBox" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/widget_goal_streak_3"
+            style="@style/WidgetGoalStreak" />
+    </LinearLayout>
+</LinearLayout>

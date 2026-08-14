@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Peter-Daily</string>
+    <string name="title_activity_main">Peter-Daily</string>
+    <string name="widget_description">Shows selected Peter-Daily goal streaks and the last 7 tracking days.</string>
+    <string name="package_name">com.peterdaily.app</string>
+    <string name="custom_url_scheme">com.peterdaily.app</string>
+</resources>
