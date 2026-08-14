@@ -1,5 +1,6 @@
 import type { AppData, DailyEntry, WeeklyEntry } from "../types";
 import { addDays, getMondayWeekStart, todayInDenver } from "./date";
+import { createDefaultGoals, migrateLegacyEntries } from "./goals";
 
 const STORAGE_KEY = "peter-daily:v1";
 
@@ -21,16 +22,33 @@ const demoWeeklyEntries: WeeklyEntry[] = [
 export function loadAppData(): AppData {
   const stored = window.localStorage.getItem(STORAGE_KEY);
   if (!stored) {
+    const goals = createDefaultGoals();
     return {
+      goals,
+      goalEntries: migrateLegacyEntries(goals, demoDailyEntries, demoWeeklyEntries),
       dailyEntries: demoDailyEntries,
       weeklyEntries: demoWeeklyEntries,
     };
   }
 
   try {
-    return JSON.parse(stored) as AppData;
-  } catch {
+    const parsed = JSON.parse(stored) as Partial<AppData>;
+    const goals = parsed.goals?.length ? parsed.goals : createDefaultGoals();
+    const goalEntries = parsed.goalEntries?.length
+      ? parsed.goalEntries
+      : migrateLegacyEntries(goals, parsed.dailyEntries ?? [], parsed.weeklyEntries ?? []);
+
     return {
+      goals,
+      goalEntries,
+      dailyEntries: parsed.dailyEntries ?? [],
+      weeklyEntries: parsed.weeklyEntries ?? [],
+    };
+  } catch {
+    const goals = createDefaultGoals();
+    return {
+      goals,
+      goalEntries: [],
       dailyEntries: [],
       weeklyEntries: [],
     };

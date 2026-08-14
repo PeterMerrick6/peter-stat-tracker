@@ -1,5 +1,4 @@
 import {
-  Activity,
   BarChart3,
   CalendarDays,
   Check,
@@ -8,13 +7,13 @@ import {
   Flame,
   Home,
   LogOut,
+  Plus,
   Settings,
+  Trash2,
   User,
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import {
-  Area,
-  AreaChart,
   CartesianGrid,
   Line,
   LineChart,
@@ -23,14 +22,21 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { AppData, DailyEntry, Streak, WeeklyEntry } from "./types";
-import { addDays, formatFriendlyDate, getMondayWeekStart, getRecentDates, getRecentWeekStarts, todayInDenver } from "./lib/date";
+import type { AppData, Goal, GoalCadence, GoalEntry, GoalStatus, GoalTargetDirection, GoalType, Streak } from "./types";
+import { addDays, formatFriendlyDate, getRecentDates, getRecentWeekStarts, todayInDenver } from "./lib/date";
 import { loadAppData, saveAppData } from "./lib/storage";
 import { buildStreaks } from "./lib/streaks";
+import {
+  calculateNumericStatus,
+  createDefaultGoals,
+  getGoalEntryKey,
+  getGoalPeriodDate,
+  isGoalEntryComplete,
+  sortGoals,
+} from "./lib/goals";
 
 type Tab = "today" | "history" | "streaks" | "settings";
 
-const CALORIE_LIMIT = 1950;
 const amplifyOutputModules = import.meta.glob("../amplify_outputs.json", {
   eager: true,
   import: "default",
@@ -54,18 +60,6 @@ const CloudShell = lazy(async () => {
   }
 
   return { default: CloudShellComponent };
-});
-
-const emptyDaily = (entryDate: string): DailyEntry => ({
-  entryDate,
-  calories: null,
-  flashcardsComplete: false,
-  milesRun: null,
-});
-
-const emptyWeekly = (weekStartDate: string): WeeklyEntry => ({
-  weekStartDate,
-  weightLbs: null,
 });
 
 function App() {
@@ -147,46 +141,77 @@ function AppExperience({
     };
   }, [useCloudData]);
 
-  const selectedWeek = getMondayWeekStart(selectedDate);
-  const dailyEntry = data.dailyEntries.find((entry) => entry.entryDate === selectedDate) ?? emptyDaily(selectedDate);
-  const weeklyEntry = data.weeklyEntries.find((entry) => entry.weekStartDate === selectedWeek) ?? emptyWeekly(selectedWeek);
-  const streaks = useMemo(() => buildStreaks(data.dailyEntries, data.weeklyEntries), [data]);
+  const goals = useMemo(() => sortGoals(data.goals), [data.goals]);
+  const activeGoals = goals.filter((goal) => goal.active && !goal.archivedAt);
+  const entriesByKey = useMemo(
+    () => new Map(data.goalEntries.map((entry) => [getGoalEntryKey(entry.goalId, entry.periodDate), entry])),
+    [data.goalEntries],
+  );
+  const streaks = useMemo(() => buildStreaks(data.goals, data.goalEntries), [data.goals, data.goalEntries]);
+  const todaySummary = getGoalSummary(activeGoals, entriesByKey, selectedDate, streaks);
 
-  async function upsertDaily(entry: DailyEntry) {
-    const exists = data.dailyEntries.some((item) => item.entryDate === entry.entryDate);
-
-    setData((current) => ({
-      ...current,
-      dailyEntries: [
-        ...current.dailyEntries.filter((item) => item.entryDate !== entry.entryDate),
-        entry,
-      ].sort((a, b) => a.entryDate.localeCompare(b.entryDate)),
-    }));
-
-    if (useCloudData) {
-      const { saveCloudDailyEntry } = await import("./lib/cloudData");
-      await saveCloudDailyEntry(entry, exists);
-    }
-  }
-
-  async function upsertWeekly(entry: WeeklyEntry) {
-    const exists = data.weeklyEntries.some((item) => item.weekStartDate === entry.weekStartDate);
+  async function upsertGoal(goal: Goal) {
+    const exists = data.goals.some((item) => item.id === goal.id);
 
     setData((current) => ({
       ...current,
-      weeklyEntries: [
-        ...current.weeklyEntries.filter((item) => item.weekStartDate !== entry.weekStartDate),
-        entry,
-      ].sort((a, b) => a.weekStartDate.localeCompare(b.weekStartDate)),
+      goals: [...current.goals.filter((item) => item.id !== goal.id), goal],
     }));
 
     if (useCloudData) {
-      const { saveCloudWeeklyEntry } = await import("./lib/cloudData");
-      await saveCloudWeeklyEntry(entry, exists);
+      const { saveCloudGoal } = await import("./lib/cloudData");
+      await saveCloudGoal(goal, exists);
     }
   }
 
-  const todaySummary = getTodaySummary(dailyEntry);
+  async function upsertGoalEntry(entry: GoalEntry) {
+    const exists = data.goalEntries.some((item) => item.goalId === entry.goalId && item.periodDate === entry.periodDate);
+
+    setData((current) => ({
+      ...current,
+      goalEntries: [
+        ...current.goalEntries.filter((item) => !(item.goalId === entry.goalId && item.periodDate === entry.periodDate)),
+        entry,
+      ].sort((a, b) => a.periodDate.localeCompare(b.periodDate) || a.goalId.localeCompare(b.goalId)),
+    }));
+
+    if (useCloudData) {
+      const { saveCloudGoalEntry } = await import("./lib/cloudData");
+      await saveCloudGoalEntry(entry, exists);
+    }
+  }
+
+  async function deleteGoalEntry(entry: GoalEntry) {
+    const exists = data.goalEntries.some((item) => item.goalId === entry.goalId && item.periodDate === entry.periodDate);
+
+    setData((current) => ({
+      ...current,
+      goalEntries: current.goalEntries.filter(
+        (item) => !(item.goalId === entry.goalId && item.periodDate === entry.periodDate),
+      ),
+    }));
+
+    if (useCloudData && exists) {
+      const { deleteCloudGoalEntry } = await import("./lib/cloudData");
+      await deleteCloudGoalEntry(entry);
+    }
+  }
+
+  async function removeGoal(goalId: string) {
+    const relatedEntries = data.goalEntries.filter((entry) => entry.goalId === goalId);
+
+    setData((current) => ({
+      ...current,
+      goals: current.goals.filter((goal) => goal.id !== goalId),
+      goalEntries: current.goalEntries.filter((entry) => entry.goalId !== goalId),
+    }));
+
+    if (useCloudData) {
+      const { deleteCloudGoal, deleteCloudGoalEntries } = await import("./lib/cloudData");
+      await deleteCloudGoalEntries(goalId, relatedEntries);
+      await deleteCloudGoal(goalId);
+    }
+  }
 
   return (
     <div className="app-shell">
@@ -203,16 +228,16 @@ function AppExperience({
 
         <section className="summary-strip" aria-label="Today summary">
           <div>
-            <span>{todaySummary.calories}</span>
-            <small>calories</small>
+            <span>{todaySummary.completed}</span>
+            <small>complete</small>
           </div>
           <div>
-            <span>{todaySummary.miles}</span>
-            <small>miles</small>
+            <span>{todaySummary.total}</span>
+            <small>active goals</small>
           </div>
           <div>
-            <span>{streaks[0]?.current ?? 0}</span>
-            <small>day streak</small>
+            <span>{todaySummary.bestStreak}</span>
+            <small>best streak</small>
           </div>
         </section>
 
@@ -222,17 +247,25 @@ function AppExperience({
         {activeTab === "today" && (
           <TodayView
             selectedDate={selectedDate}
-            dailyEntry={dailyEntry}
-            weeklyEntry={weeklyEntry}
+            goals={activeGoals}
+            entriesByKey={entriesByKey}
             onDateChange={setSelectedDate}
-            onSaveDaily={upsertDaily}
-            onSaveWeekly={upsertWeekly}
+            onSaveEntries={async (entries) => {
+              for (const entry of entries) {
+                if (isEmptyGoalEntry(entry)) {
+                  await deleteGoalEntry(entry);
+                } else {
+                  await upsertGoalEntry(entry);
+                }
+              }
+            }}
           />
         )}
 
         {activeTab === "history" && (
           <HistoryView
-            data={data}
+            goals={activeGoals}
+            entriesByKey={entriesByKey}
             selectedDate={selectedDate}
             onSelectDate={(date) => {
               setSelectedDate(date);
@@ -241,9 +274,16 @@ function AppExperience({
           />
         )}
 
-        {activeTab === "streaks" && <StreaksView streaks={streaks} data={data} />}
+        {activeTab === "streaks" && <StreaksView streaks={streaks} goals={activeGoals} entries={data.goalEntries} />}
 
-        {activeTab === "settings" && <SettingsView storageMode={storageMode} />}
+        {activeTab === "settings" && (
+          <SettingsView
+            storageMode={storageMode}
+            goals={goals}
+            onSaveGoal={upsertGoal}
+            onRemoveGoal={removeGoal}
+          />
+        )}
       </main>
 
       <nav className="bottom-nav" aria-label="Primary navigation">
@@ -258,55 +298,58 @@ function AppExperience({
 
 function TodayView({
   selectedDate,
-  dailyEntry,
-  weeklyEntry,
+  goals,
+  entriesByKey,
   onDateChange,
-  onSaveDaily,
-  onSaveWeekly,
+  onSaveEntries,
 }: {
   selectedDate: string;
-  dailyEntry: DailyEntry;
-  weeklyEntry: WeeklyEntry;
+  goals: Goal[];
+  entriesByKey: Map<string, GoalEntry>;
   onDateChange: (date: string) => void;
-  onSaveDaily: (entry: DailyEntry) => Promise<void> | void;
-  onSaveWeekly: (entry: WeeklyEntry) => Promise<void> | void;
+  onSaveEntries: (entries: GoalEntry[]) => Promise<void> | void;
 }) {
-  const [calories, setCalories] = useState(dailyEntry.calories?.toString() ?? "");
-  const [flashcardsComplete, setFlashcardsComplete] = useState(dailyEntry.flashcardsComplete);
-  const [milesRun, setMilesRun] = useState(dailyEntry.milesRun?.toString() ?? "");
-  const [weightLbs, setWeightLbs] = useState(weeklyEntry.weightLbs?.toString() ?? "");
-  const [saved, setSaved] = useState(false);
+  const dailyGoals = goals.filter((goal) => goal.cadence === "daily");
+  const weeklyGoals = goals.filter((goal) => goal.cadence === "weekly");
+  const visibleGoals = [...dailyGoals, ...weeklyGoals];
+  const visibleGoalSignature = visibleGoals
+    .map((goal) => `${goal.id}:${getGoalPeriodDate(goal, selectedDate)}`)
+    .join("|");
+  const [draftEntries, setDraftEntries] = useState<Record<string, GoalEntry>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    setCalories(dailyEntry.calories?.toString() ?? "");
-    setFlashcardsComplete(dailyEntry.flashcardsComplete);
-    setMilesRun(dailyEntry.milesRun?.toString() ?? "");
-    setWeightLbs(weeklyEntry.weightLbs?.toString() ?? "");
-    setSaved(false);
+    const nextDrafts: Record<string, GoalEntry> = {};
+    for (const goal of visibleGoals) {
+      const periodDate = getGoalPeriodDate(goal, selectedDate);
+      const key = getGoalEntryKey(goal.id, periodDate);
+      nextDrafts[key] = entriesByKey.get(key) ?? {
+        goalId: goal.id,
+        periodDate,
+        value: null,
+        status: null,
+      };
+    }
+    setDraftEntries(nextDrafts);
     setSaveError(null);
-  }, [dailyEntry, weeklyEntry]);
+    setSaved(false);
+  }, [entriesByKey, selectedDate, visibleGoalSignature]);
 
-  const parsedCalories = calories === "" ? null : Math.max(0, Math.round(Number(calories)));
-  const parsedMiles = milesRun === "" ? null : Math.max(0, Number(milesRun));
-  const parsedWeight = weightLbs === "" ? null : Math.max(0, Number(weightLbs));
-  const isUnderLimit = typeof parsedCalories === "number" && parsedCalories <= CALORIE_LIMIT;
+  function updateDraft(goal: Goal, entry: GoalEntry) {
+    setDraftEntries((current) => ({
+      ...current,
+      [getGoalEntryKey(goal.id, entry.periodDate)]: entry,
+    }));
+    setSaved(false);
+  }
 
-  async function handleSave() {
+  async function handleSaveAll() {
     try {
       setIsSaving(true);
       setSaveError(null);
-      await onSaveDaily({
-        entryDate: selectedDate,
-        calories: Number.isFinite(parsedCalories) ? parsedCalories : null,
-        flashcardsComplete,
-        milesRun: Number.isFinite(parsedMiles) ? parsedMiles : null,
-      });
-      await onSaveWeekly({
-        weekStartDate: getMondayWeekStart(selectedDate),
-        weightLbs: Number.isFinite(parsedWeight) ? parsedWeight : null,
-      });
+      await onSaveEntries(Object.values(draftEntries));
       setSaved(true);
     } catch (error) {
       setSaveError(getErrorMessage(error));
@@ -330,72 +373,157 @@ function TodayView({
         </button>
       </div>
 
-      <div className="field-grid">
-        <label className="stat-field">
-          <span>Calories</span>
-          <input
-            inputMode="numeric"
-            min="0"
-            pattern="[0-9]*"
-            type="number"
-            value={calories}
-            onChange={(event) => setCalories(event.target.value)}
-            placeholder="1950"
-          />
-          <small className={isUnderLimit ? "good" : "muted"}>{calories === "" ? "1,950 limit" : isUnderLimit ? "Under limit" : "Over limit"}</small>
-        </label>
-
-        <label className="stat-field">
-          <span>Miles</span>
-          <input
-            inputMode="decimal"
-            min="0"
-            step="0.01"
-            type="number"
-            value={milesRun}
-            onChange={(event) => setMilesRun(event.target.value)}
-            placeholder="0.00"
-          />
-          <small className="muted">0 is valid</small>
-        </label>
-      </div>
-
-      <button className={`toggle-card ${flashcardsComplete ? "active" : ""}`} onClick={() => setFlashcardsComplete((value) => !value)}>
-        <span>
-          <Check size={22} />
-        </span>
-        <strong>Flash cards complete</strong>
-      </button>
-
-      <label className="weekly-field">
-        <span>Week of {formatFriendlyDate(getMondayWeekStart(selectedDate))}</span>
-        <strong>Weight</strong>
-        <div>
-          <input
-            inputMode="decimal"
-            min="0"
-            step="0.1"
-            type="number"
-            value={weightLbs}
-            onChange={(event) => setWeightLbs(event.target.value)}
-            placeholder="lbs"
-          />
-          <small>lbs</small>
-        </div>
-      </label>
+      <GoalSection title="Daily" goals={dailyGoals} draftEntries={draftEntries} selectedDate={selectedDate} onChangeEntry={updateDraft} />
+      <GoalSection title="Weekly" goals={weeklyGoals} draftEntries={draftEntries} selectedDate={selectedDate} onChangeEntry={updateDraft} />
 
       {saveError && <p className="status-banner error">{saveError}</p>}
-
-      <button className="primary-action" onClick={handleSave} disabled={isSaving}>
-        {isSaving ? "Saving..." : saved ? "Saved" : "Save entry"}
+      <button className="primary-action" onClick={handleSaveAll} disabled={isSaving || visibleGoals.length === 0}>
+        {isSaving ? "Saving..." : saved ? "Saved all goals" : "Save all goals"}
       </button>
     </section>
   );
 }
 
-function HistoryView({ data, selectedDate, onSelectDate }: { data: AppData; selectedDate: string; onSelectDate: (date: string) => void }) {
+function GoalSection({
+  title,
+  goals,
+  draftEntries,
+  selectedDate,
+  onChangeEntry,
+}: {
+  title: string;
+  goals: Goal[];
+  draftEntries: Record<string, GoalEntry>;
+  selectedDate: string;
+  onChangeEntry: (goal: Goal, entry: GoalEntry) => void;
+}) {
+  if (goals.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="goal-section">
+      <div className="section-heading compact">
+        <h2>{title}</h2>
+      </div>
+      {goals.map((goal) => {
+        const periodDate = getGoalPeriodDate(goal, selectedDate);
+        const key = getGoalEntryKey(goal.id, periodDate);
+        const entry = draftEntries[key] ?? {
+          goalId: goal.id,
+          periodDate,
+          value: null,
+          status: null,
+        };
+        return <GoalCard key={goal.id} goal={goal} entry={entry} onChangeEntry={(nextEntry) => onChangeEntry(goal, nextEntry)} />;
+      })}
+    </section>
+  );
+}
+
+function GoalCard({
+  goal,
+  entry,
+  onChangeEntry,
+}: {
+  goal: Goal;
+  entry: GoalEntry;
+  onChangeEntry: (entry: GoalEntry) => void;
+}) {
+  const value = entry.value?.toString() ?? "";
+  const displayStatus = entry.status;
+
+  function updateStatus(status: GoalStatus) {
+    onChangeEntry({
+      ...entry,
+      status,
+      value: null,
+    });
+  }
+
+  function updateValue(rawValue: string) {
+    const numericValue = rawValue === "" ? null : Number(rawValue);
+    const safeValue = Number.isFinite(numericValue) ? numericValue : null;
+    onChangeEntry({
+      ...entry,
+      value: safeValue,
+      status: calculateNumericStatus(goal, safeValue),
+    });
+  }
+
+  function unlogEntry() {
+    onChangeEntry({
+      ...entry,
+      value: null,
+      status: null,
+    });
+  }
+
+  return (
+    <article className={`goal-card ${displayStatus ? `status-${displayStatus}` : ""}`}>
+      <div className="goal-card-header">
+        <div>
+          <h3>{goal.title}</h3>
+          <p>{goal.description}</p>
+        </div>
+        <StatusPill status={displayStatus} />
+      </div>
+
+      {goal.type === "status" ? (
+        <StatusSelector value={displayStatus} onChange={updateStatus} />
+      ) : (
+        <label className="goal-input">
+          <span>{goal.type === "trend" ? "Value" : "Progress"}</span>
+          <div>
+            <input
+              inputMode="decimal"
+              type="number"
+              min="0"
+              step={goal.unit === "calories" ? "1" : "0.01"}
+              value={value}
+              onChange={(event) => updateValue(event.target.value)}
+              placeholder={goal.unit || "value"}
+            />
+            {goal.unit && <small>{goal.unit}</small>}
+          </div>
+        </label>
+      )}
+
+      <button className="text-action" type="button" onClick={unlogEntry} disabled={!entry.status && entry.value === null}>
+        Unlog
+      </button>
+    </article>
+  );
+}
+
+function StatusSelector({ value, onChange }: { value: GoalStatus | null; onChange: (status: GoalStatus) => void }) {
+  return (
+    <div className="segmented-control" aria-label="Completion status">
+      {(["minimum", "normal", "exceeds"] as GoalStatus[]).map((status) => (
+        <button className={value === status ? `active status-${status}` : ""} key={status} onClick={() => onChange(status)}>
+          {status}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function StatusPill({ status }: { status: GoalStatus | null | undefined }) {
+  return <span className={`status-pill ${status ? `status-${status}` : ""}`}>{status ?? "open"}</span>;
+}
+
+function HistoryView({
+  goals,
+  entriesByKey,
+  selectedDate,
+  onSelectDate,
+}: {
+  goals: Goal[];
+  entriesByKey: Map<string, GoalEntry>;
+  selectedDate: string;
+  onSelectDate: (date: string) => void;
+}) {
   const dates = getRecentDates(21, selectedDate).reverse();
-  const dailyByDate = new Map(data.dailyEntries.map((entry) => [entry.entryDate, entry]));
 
   return (
     <section className="screen">
@@ -405,16 +533,19 @@ function HistoryView({ data, selectedDate, onSelectDate }: { data: AppData; sele
       </div>
       <div className="history-list">
         {dates.map((date) => {
-          const entry = dailyByDate.get(date);
+          const dailyGoals = goals.filter((goal) => goal.cadence === "daily");
+          const completed = dailyGoals.filter((goal) => isGoalEntryComplete(entriesByKey.get(getGoalEntryKey(goal.id, date))));
           return (
             <button className="history-row" key={date} onClick={() => onSelectDate(date)}>
               <div>
                 <strong>{formatFriendlyDate(date)}</strong>
-                <small>{entry?.flashcardsComplete ? "Flash cards done" : "Flash cards open"}</small>
+                <small>{completed.length} of {dailyGoals.length} daily goals</small>
               </div>
-              <div className="history-metrics">
-                <span>{entry?.calories ?? "-"}</span>
-                <span>{entry?.milesRun ?? "-"} mi</span>
+              <div className="history-statuses">
+                {dailyGoals.slice(0, 4).map((goal) => {
+                  const entry = entriesByKey.get(getGoalEntryKey(goal.id, date));
+                  return <span className={entry?.status ? `status-dot status-${entry.status}` : "status-dot"} key={goal.id} title={goal.title} />;
+                })}
               </div>
             </button>
           );
@@ -424,23 +555,8 @@ function HistoryView({ data, selectedDate, onSelectDate }: { data: AppData; sele
   );
 }
 
-function StreaksView({ streaks, data }: { streaks: Streak[]; data: AppData }) {
-  const chartData = getRecentDates(14).map((date) => {
-    const entry = data.dailyEntries.find((item) => item.entryDate === date);
-    return {
-      date: date.slice(5),
-      calories: entry?.calories ?? null,
-      miles: entry?.milesRun ?? null,
-    };
-  });
-
-  const weightData = getRecentWeekStarts(8).map((week) => {
-    const entry = data.weeklyEntries.find((item) => item.weekStartDate === week);
-    return {
-      week: week.slice(5),
-      weight: entry?.weightLbs ?? null,
-    };
-  });
+function StreaksView({ streaks, goals, entries }: { streaks: Streak[]; goals: Goal[]; entries: GoalEntry[] }) {
+  const metricGoals = goals.filter((goal) => goal.type === "numeric" || goal.type === "trend");
 
   return (
     <section className="screen">
@@ -458,75 +574,277 @@ function StreaksView({ streaks, data }: { streaks: Streak[]; data: AppData }) {
         ))}
       </div>
 
-      <ChartPanel title="Calories">
-        <ResponsiveContainer width="100%" height={190}>
-          <AreaChart data={chartData} margin={{ top: 10, right: 8, left: -28, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e8dfd2" />
-            <XAxis dataKey="date" tickLine={false} axisLine={false} fontSize={12} />
-            <YAxis tickLine={false} axisLine={false} fontSize={12} />
-            <Tooltip />
-            <Area type="monotone" dataKey="calories" stroke="#b98500" fill="#f4c95d" fillOpacity={0.35} />
-          </AreaChart>
-        </ResponsiveContainer>
-      </ChartPanel>
-
-      <ChartPanel title="Miles">
-        <ResponsiveContainer width="100%" height={190}>
-          <AreaChart data={chartData} margin={{ top: 10, right: 8, left: -28, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e8dfd2" />
-            <XAxis dataKey="date" tickLine={false} axisLine={false} fontSize={12} />
-            <YAxis tickLine={false} axisLine={false} fontSize={12} />
-            <Tooltip />
-            <Area type="monotone" dataKey="miles" stroke="#c85235" fill="#e86f51" fillOpacity={0.3} />
-          </AreaChart>
-        </ResponsiveContainer>
-      </ChartPanel>
-
-      <ChartPanel title="Weight">
-        <ResponsiveContainer width="100%" height={190}>
-          <LineChart data={weightData} margin={{ top: 10, right: 8, left: -20, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e8dfd2" />
-            <XAxis dataKey="week" tickLine={false} axisLine={false} fontSize={12} />
-            <YAxis tickLine={false} axisLine={false} fontSize={12} domain={["dataMin - 2", "dataMax + 2"]} />
-            <Tooltip />
-            <Line type="monotone" dataKey="weight" stroke="#10231d" strokeWidth={3} dot={{ r: 4 }} />
-          </LineChart>
-        </ResponsiveContainer>
-      </ChartPanel>
+      {metricGoals.map((goal) => (
+        <GoalChart key={goal.id} goal={goal} entries={entries} />
+      ))}
     </section>
   );
 }
 
-function SettingsView({ storageMode }: { storageMode: string }) {
+function GoalChart({ goal, entries }: { goal: Goal; entries: GoalEntry[] }) {
+  const periods = goal.cadence === "weekly" ? getRecentWeekStarts(8) : getRecentDates(14);
+  const chartData = periods.map((period) => {
+    const entry = entries.find((item) => item.goalId === goal.id && item.periodDate === period);
+    return {
+      period: period.slice(5),
+      value: entry?.value ?? null,
+      status: entry?.status ?? null,
+    };
+  });
+
+  return (
+    <ChartPanel title={goal.title}>
+      <ResponsiveContainer width="100%" height={190}>
+        <LineChart data={chartData} margin={{ top: 10, right: 8, left: -20, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e8dfd2" />
+          <XAxis dataKey="period" tickLine={false} axisLine={false} fontSize={12} />
+          <YAxis tickLine={false} axisLine={false} fontSize={12} domain={["auto", "auto"]} />
+          <Tooltip />
+          <Line type="monotone" dataKey="value" stroke="#10231d" strokeWidth={3} dot={<ChartStatusDot />} />
+        </LineChart>
+      </ResponsiveContainer>
+    </ChartPanel>
+  );
+}
+
+function SettingsView({
+  storageMode,
+  goals,
+  onSaveGoal,
+  onRemoveGoal,
+}: {
+  storageMode: string;
+  goals: Goal[];
+  onSaveGoal: (goal: Goal) => Promise<void> | void;
+  onRemoveGoal: (goalId: string) => Promise<void> | void;
+}) {
+  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
+  const [removeGoal, setRemoveGoal] = useState<Goal | null>(null);
+
+  function createGoal() {
+    const order = goals.length ? Math.max(...goals.map((goal) => goal.displayOrder)) + 10 : 10;
+    setEditingGoal({
+      ...createDefaultGoals()[0],
+      id: createGoalId(),
+      title: "New goal",
+      description: "",
+      type: "status",
+      cadence: "daily",
+      unit: "",
+      targetDirection: "none",
+      minimumThreshold: null,
+      normalThreshold: null,
+      exceedsThreshold: null,
+      displayOrder: order,
+    });
+  }
+
+  async function saveGoal(goal: Goal) {
+    await onSaveGoal(goal);
+    setEditingGoal(null);
+  }
+
+  async function confirmRemoveGoal() {
+    if (!removeGoal) return;
+    await onRemoveGoal(removeGoal.id);
+    setRemoveGoal(null);
+  }
+
   return (
     <section className="screen">
       <div className="section-heading">
         <h2>Settings</h2>
         <User size={22} />
       </div>
+
       <div className="settings-list">
         <div>
           <span>Sign in</span>
           <strong>Email and password</strong>
         </div>
         <div>
-          <span>Timezone</span>
-          <strong>America/Denver</strong>
-        </div>
-        <div>
-          <span>Calories</span>
-          <strong>1,950 daily limit</strong>
-        </div>
-        <div>
-          <span>Weight</span>
-          <strong>Monday, lbs</strong>
-        </div>
-        <div>
           <span>Storage</span>
           <strong>{storageMode}</strong>
         </div>
       </div>
+
+      <div className="section-heading">
+        <h2>Goals</h2>
+        <button className="icon-button" aria-label="Add goal" onClick={createGoal}>
+          <Plus size={20} />
+        </button>
+      </div>
+
+      <div className="goal-settings-list">
+        {goals.map((goal) => (
+          <article className="goal-settings-card" key={goal.id}>
+            <div>
+              <h3>{goal.title}</h3>
+              <p>{goal.description || "No description"}</p>
+              <small>{goal.type} - {goal.cadence}{goal.archivedAt ? " - archived" : ""}</small>
+            </div>
+            <div className="settings-actions">
+              <button onClick={() => setEditingGoal(goal)}>Edit</button>
+              <button onClick={() => onSaveGoal({ ...goal, active: !goal.active, archivedAt: goal.active ? new Date().toISOString() : null })}>
+                {goal.active ? "Archive" : "Restore"}
+              </button>
+              <button className="danger-action" aria-label={`Remove ${goal.title}`} onClick={() => setRemoveGoal(goal)}>
+                <Trash2 size={18} />
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      {editingGoal && <GoalEditor goal={editingGoal} onCancel={() => setEditingGoal(null)} onSave={saveGoal} />}
+      {removeGoal && (
+        <ConfirmRemoveGoal goal={removeGoal} onCancel={() => setRemoveGoal(null)} onConfirm={confirmRemoveGoal} />
+      )}
     </section>
+  );
+}
+
+function GoalEditor({
+  goal,
+  onCancel,
+  onSave,
+}: {
+  goal: Goal;
+  onCancel: () => void;
+  onSave: (goal: Goal) => Promise<void> | void;
+}) {
+  const [draft, setDraft] = useState(goal);
+  const [isSaving, setIsSaving] = useState(false);
+
+  function update<K extends keyof Goal>(key: K, value: Goal[K]) {
+    setDraft((current) => {
+      const next = { ...current, [key]: value };
+      if (key === "type" && value !== "numeric") {
+        next.targetDirection = "none";
+        next.minimumThreshold = null;
+        next.normalThreshold = null;
+        next.exceedsThreshold = null;
+      }
+      if (key === "type" && value === "numeric") {
+        next.targetDirection = "atLeast";
+      }
+      return next;
+    });
+  }
+
+  async function handleSave() {
+    setIsSaving(true);
+    await onSave(draft);
+    setIsSaving(false);
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <article className="modal-panel">
+        <h2>{goal.id.startsWith("goal-new") ? "Add goal" : "Edit goal"}</h2>
+        <label>
+          <span>Title</span>
+          <input value={draft.title} onChange={(event) => update("title", event.target.value)} />
+        </label>
+        <label>
+          <span>Description</span>
+          <input value={draft.description} onChange={(event) => update("description", event.target.value)} />
+        </label>
+        <div className="field-grid">
+          <SelectField label="Type" value={draft.type} options={["status", "numeric", "trend"]} onChange={(value) => update("type", value as GoalType)} />
+          <SelectField label="Cadence" value={draft.cadence} options={["daily", "weekly"]} onChange={(value) => update("cadence", value as GoalCadence)} />
+        </div>
+        <label>
+          <span>Unit</span>
+          <input value={draft.unit} onChange={(event) => update("unit", event.target.value)} placeholder="miles, calories, lbs" />
+        </label>
+
+        {draft.type === "numeric" && (
+          <>
+            <SelectField
+              label="Target direction"
+              value={draft.targetDirection}
+              options={["atLeast", "atMost"]}
+              onChange={(value) => update("targetDirection", value as GoalTargetDirection)}
+            />
+            <div className="field-grid three">
+              <NumberField label="Minimum" value={draft.minimumThreshold} onChange={(value) => update("minimumThreshold", value)} />
+              <NumberField label="Normal" value={draft.normalThreshold} onChange={(value) => update("normalThreshold", value)} />
+              <NumberField label="Exceeds" value={draft.exceedsThreshold} onChange={(value) => update("exceedsThreshold", value)} />
+            </div>
+          </>
+        )}
+
+        <div className="modal-actions">
+          <button onClick={onCancel}>Cancel</button>
+          <button className="primary-action compact-action" onClick={handleSave} disabled={isSaving || !draft.title.trim()}>
+            Save goal
+          </button>
+        </div>
+      </article>
+    </div>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label>
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function NumberField({ label, value, onChange }: { label: string; value: number | null; onChange: (value: number | null) => void }) {
+  return (
+    <label>
+      <span>{label}</span>
+      <input
+        type="number"
+        inputMode="decimal"
+        value={value ?? ""}
+        onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))}
+      />
+    </label>
+  );
+}
+
+function ConfirmRemoveGoal({
+  goal,
+  onCancel,
+  onConfirm,
+}: {
+  goal: Goal;
+  onCancel: () => void;
+  onConfirm: () => Promise<void> | void;
+}) {
+  return (
+    <div className="modal-backdrop">
+      <article className="modal-panel">
+        <h2>Remove this goal?</h2>
+        <p>This will permanently remove {goal.title} and its tracked history. This cannot be undone.</p>
+        <div className="modal-actions">
+          <button onClick={onCancel}>Cancel</button>
+          <button className="danger-fill" onClick={onConfirm}>Remove permanently</button>
+        </div>
+      </article>
+    </div>
   );
 }
 
@@ -539,6 +857,15 @@ function ChartPanel({ title, children }: { title: string; children: React.ReactN
   );
 }
 
+function ChartStatusDot({ cx, cy, payload }: { cx?: number; cy?: number; payload?: { status?: GoalStatus | null } }) {
+  if (typeof cx !== "number" || typeof cy !== "number") {
+    return null;
+  }
+
+  const fill = getStatusColor(payload?.status ?? null);
+  return <circle cx={cx} cy={cy} r={4.5} fill={fill} stroke="#fffdf9" strokeWidth={2} />;
+}
+
 function NavButton({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
   return (
     <button className={active ? "active" : ""} onClick={onClick}>
@@ -548,11 +875,37 @@ function NavButton({ icon, label, active, onClick }: { icon: React.ReactNode; la
   );
 }
 
-function getTodaySummary(entry: DailyEntry) {
+function getGoalSummary(goals: Goal[], entriesByKey: Map<string, GoalEntry>, selectedDate: string, streaks: Streak[]) {
+  const completed = goals.filter((goal) => {
+    const periodDate = getGoalPeriodDate(goal, selectedDate);
+    return isGoalEntryComplete(entriesByKey.get(getGoalEntryKey(goal.id, periodDate)));
+  });
+
   return {
-    calories: entry.calories ?? "-",
-    miles: entry.milesRun ?? "-",
+    completed: completed.length,
+    total: goals.length,
+    bestStreak: Math.max(0, ...streaks.map((streak) => streak.current)),
   };
+}
+
+function getStatusColor(status: GoalStatus | null): string {
+  if (status === "minimum") return "#f4c95d";
+  if (status === "normal") return "#3d7f6b";
+  if (status === "exceeds") return "#79a76b";
+  if (status === "logged") return "#9ba69f";
+  return "#d8ccbc";
+}
+
+function isEmptyGoalEntry(entry: GoalEntry): boolean {
+  return entry.value === null && entry.status === null;
+}
+
+function createGoalId(): string {
+  if ("crypto" in window && "randomUUID" in window.crypto) {
+    return `goal-new-${window.crypto.randomUUID()}`;
+  }
+
+  return `goal-new-${Date.now()}`;
 }
 
 function getErrorMessage(error: unknown): string {

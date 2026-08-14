@@ -10,7 +10,40 @@ export type WeeklyEntry = {
   weightLbs: number | null;
 };
 
+export type GoalType = "status" | "numeric" | "trend";
+
+export type GoalCadence = "daily" | "weekly";
+
+export type GoalTargetDirection = "atLeast" | "atMost" | "none";
+
+export type GoalStatus = "minimum" | "normal" | "exceeds" | "logged";
+
+export type Goal = {
+  id: string;
+  title: string;
+  description: string;
+  type: GoalType;
+  cadence: GoalCadence;
+  unit: string;
+  targetDirection: GoalTargetDirection;
+  minimumThreshold: number | null;
+  normalThreshold: number | null;
+  exceedsThreshold: number | null;
+  active: boolean;
+  displayOrder: number;
+  archivedAt: string | null;
+};
+
+export type GoalEntry = {
+  goalId: string;
+  periodDate: string;
+  value: number | null;
+  status: GoalStatus | null;
+};
+
 export type AppData = {
+  goals: Goal[];
+  goalEntries: GoalEntry[];
   dailyEntries: DailyEntry[];
   weeklyEntries: WeeklyEntry[];
 };
