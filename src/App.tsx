@@ -108,6 +108,7 @@ function AppExperience({
   const [isCloudLoading, setIsCloudLoading] = useState(useCloudData);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [widgetGoalIds, setWidgetGoalIds] = useState<string[]>([]);
+  const [widgetGoalIdsLoaded, setWidgetGoalIdsLoaded] = useState(false);
 
   useEffect(() => {
     if (!useCloudData) {
@@ -160,6 +161,10 @@ function AppExperience({
   const todaySummary = getGoalSummary(activeGoals, entriesByKey, selectedDate, streaks);
 
   useEffect(() => {
+    if (useCloudData && isCloudLoading) {
+      return;
+    }
+
     setWidgetGoalIds((current) => {
       const activeIds = new Set(activeGoals.map((goal) => goal.id));
       const selected = current.filter((goalId) => activeIds.has(goalId)).slice(0, getWidgetGoalLimit());
@@ -167,16 +172,22 @@ function AppExperience({
       saveWidgetGoalIds(nextSelected);
       return nextSelected;
     });
-  }, [activeGoals, data.goals]);
+    setWidgetGoalIdsLoaded(true);
+  }, [activeGoals, data.goals, isCloudLoading, useCloudData]);
 
   useEffect(() => {
+    if ((useCloudData && isCloudLoading) || !widgetGoalIdsLoaded) {
+      return;
+    }
+
     void saveAndroidWidgetSnapshot(buildWidgetSnapshot(data.goals, data.goalEntries, widgetGoalIds));
-  }, [data.goals, data.goalEntries, widgetGoalIds]);
+  }, [data.goals, data.goalEntries, isCloudLoading, useCloudData, widgetGoalIds, widgetGoalIdsLoaded]);
 
   function updateWidgetGoalIds(goalIds: string[]) {
     const nextGoalIds = goalIds.slice(0, getWidgetGoalLimit());
     saveWidgetGoalIds(nextGoalIds);
     setWidgetGoalIds(nextGoalIds);
+    setWidgetGoalIdsLoaded(true);
   }
 
   async function upsertGoal(goal: Goal) {
