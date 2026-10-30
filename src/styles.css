@@ -146,6 +146,24 @@ button:disabled {
   border-color: #d99a89;
   color: #8a2d1f;
   background: #fff0ea;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.status-banner.error p {
+  margin: 0;
+}
+
+.status-banner.error small {
+  grid-column: 1;
+  overflow-wrap: anywhere;
+}
+
+.status-banner.error button {
+  grid-column: 2;
+  grid-row: 1 / 3;
 }
 
 .screen {

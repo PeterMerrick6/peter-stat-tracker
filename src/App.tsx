@@ -9,6 +9,7 @@ import {
   Home,
   LogOut,
   Plus,
+  RotateCw,
   Settings,
   Trash2,
   User,
@@ -57,9 +58,9 @@ const CloudShell = lazy(async () => {
     import("@aws-amplify/ui-react/styles.css"),
   ]);
 
-  function CloudShellComponent({ outputs }: { outputs: unknown }) {
-    Amplify.configure(outputs as Parameters<typeof Amplify.configure>[0]);
+  Amplify.configure(amplifyOutputs as Parameters<typeof Amplify.configure>[0]);
 
+  function CloudShellComponent() {
     return (
       <Authenticator loginMechanisms={["email"]}>
         {({ signOut }) => <AppExperience signOut={signOut} storageMode="Cloud data" useCloudData />}
@@ -74,7 +75,7 @@ function App() {
   if (amplifyOutputs) {
     return (
       <Suspense fallback={<AppLoading />}>
-        <CloudShell outputs={amplifyOutputs} />
+        <CloudShell />
       </Suspense>
     );
   }
@@ -93,22 +94,30 @@ function AppLoading() {
   );
 }
 
-function AppExperience({
+async function loadCloudAppData(): Promise<AppData> {
+  const { loadCloudData } = await import("./lib/cloudData");
+  return loadCloudData();
+}
+
+export function AppExperience({
   signOut,
   storageMode,
   useCloudData = false,
+  loadData = loadCloudAppData,
 }: {
   signOut?: () => void;
   storageMode: string;
   useCloudData?: boolean;
+  loadData?: () => Promise<AppData>;
 }) {
   const [data, setData] = useState<AppData>(() => loadAppData());
   const [activeTab, setActiveTab] = useState<Tab>("today");
   const [selectedDate, setSelectedDate] = useState(todayInDenver());
   const [isCloudLoading, setIsCloudLoading] = useState(useCloudData);
+  const [cloudDataLoaded, setCloudDataLoaded] = useState(!useCloudData);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const [widgetGoalIds, setWidgetGoalIds] = useState<string[]>([]);
-  const [widgetGoalIdsLoaded, setWidgetGoalIdsLoaded] = useState(false);
+  const [widgetGoalIds, setWidgetGoalIds] = useState<string[] | null>(null);
 
   useEffect(() => {
     if (!useCloudData) {
@@ -122,23 +131,29 @@ function AppExperience({
     }
 
     let isActive = true;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let failures = 0;
+
+    setIsCloudLoading(true);
+    setSyncError(null);
 
     async function loadEntries() {
       try {
-        setIsCloudLoading(true);
-        setSyncError(null);
-        const { loadCloudData } = await import("./lib/cloudData");
-        const cloudData = await loadCloudData();
+        const cloudData = await loadData();
 
         if (isActive) {
           setData(cloudData);
+          setCloudDataLoaded(true);
+          setIsCloudLoading(false);
         }
       } catch (error) {
         if (isActive) {
+          if (failures < 2) {
+            failures += 1;
+            retryTimer = setTimeout(() => void loadEntries(), failures * 1000);
+            return;
+          }
           setSyncError(getErrorMessage(error));
-        }
-      } finally {
-        if (isActive) {
           setIsCloudLoading(false);
         }
       }
@@ -148,8 +163,9 @@ function AppExperience({
 
     return () => {
       isActive = false;
+      clearTimeout(retryTimer);
     };
-  }, [useCloudData]);
+  }, [useCloudData, loadAttempt, loadData]);
 
   const goals = useMemo(() => sortGoals(data.goals), [data.goals]);
   const activeGoals = useMemo(() => goals.filter((goal) => goal.active && !goal.archivedAt), [goals]);
@@ -161,33 +177,31 @@ function AppExperience({
   const todaySummary = getGoalSummary(activeGoals, entriesByKey, selectedDate, streaks);
 
   useEffect(() => {
-    if (useCloudData && isCloudLoading) {
+    if (!cloudDataLoaded || widgetGoalIds !== null) {
       return;
     }
 
-    setWidgetGoalIds((current) => {
-      const activeIds = new Set(activeGoals.map((goal) => goal.id));
-      const selected = current.filter((goalId) => activeIds.has(goalId)).slice(0, getWidgetGoalLimit());
-      const nextSelected = selected.length ? selected : loadWidgetGoalIds(data.goals);
-      saveWidgetGoalIds(nextSelected);
-      return nextSelected;
-    });
-    setWidgetGoalIdsLoaded(true);
-  }, [activeGoals, data.goals, isCloudLoading, useCloudData]);
+    setWidgetGoalIds(loadWidgetGoalIds(data.goals));
+  }, [cloudDataLoaded, data.goals, widgetGoalIds]);
+
+  const selectedWidgetGoalIds = useMemo(() => {
+    const activeIds = new Set(activeGoals.map((goal) => goal.id));
+    return (widgetGoalIds ?? []).filter((goalId) => activeIds.has(goalId));
+  }, [activeGoals, widgetGoalIds]);
 
   useEffect(() => {
-    if ((useCloudData && isCloudLoading) || !widgetGoalIdsLoaded) {
+    if (!cloudDataLoaded || widgetGoalIds === null) {
       return;
     }
 
-    void saveAndroidWidgetSnapshot(buildWidgetSnapshot(data.goals, data.goalEntries, widgetGoalIds));
-  }, [data.goals, data.goalEntries, isCloudLoading, useCloudData, widgetGoalIds, widgetGoalIdsLoaded]);
+    void saveAndroidWidgetSnapshot(buildWidgetSnapshot(data.goals, data.goalEntries, selectedWidgetGoalIds))
+      .catch((error) => console.error("Widget update failed", error));
+  }, [cloudDataLoaded, data.goals, data.goalEntries, selectedWidgetGoalIds, widgetGoalIds]);
 
   function updateWidgetGoalIds(goalIds: string[]) {
     const nextGoalIds = goalIds.slice(0, getWidgetGoalLimit());
     saveWidgetGoalIds(nextGoalIds);
     setWidgetGoalIds(nextGoalIds);
-    setWidgetGoalIdsLoaded(true);
   }
 
   async function upsertGoal(goal: Goal) {
@@ -266,7 +280,7 @@ function AppExperience({
           </button>
         </header>
 
-        <section className="summary-strip" aria-label="Today summary">
+        {cloudDataLoaded && <section className="summary-strip" aria-label="Today summary">
           <div>
             <span>{todaySummary.completed}</span>
             <small>complete</small>
@@ -279,12 +293,20 @@ function AppExperience({
             <span>{todaySummary.bestStreak}</span>
             <small>best streak</small>
           </div>
-        </section>
+        </section>}
 
         {isCloudLoading && <p className="status-banner">Loading cloud data...</p>}
-        {syncError && <p className="status-banner error">{syncError}</p>}
+        {syncError && (
+          <div className="status-banner error" role="alert">
+            <p>Unable to load your data. Your tracker selections have been kept.</p>
+            <small>{syncError}</small>
+            <button className="icon-button" title="Retry loading data" aria-label="Retry loading data" onClick={() => setLoadAttempt((current) => current + 1)}>
+              <RotateCw size={20} />
+            </button>
+          </div>
+        )}
 
-        {activeTab === "today" && (
+        {cloudDataLoaded && activeTab === "today" && (
           <TodayView
             selectedDate={selectedDate}
             goals={activeGoals}
@@ -302,7 +324,7 @@ function AppExperience({
           />
         )}
 
-        {activeTab === "history" && (
+        {cloudDataLoaded && activeTab === "history" && (
           <HistoryView
             goals={activeGoals}
             entriesByKey={entriesByKey}
@@ -314,13 +336,13 @@ function AppExperience({
           />
         )}
 
-        {activeTab === "streaks" && <StreaksView streaks={streaks} goals={activeGoals} entries={data.goalEntries} />}
+        {cloudDataLoaded && activeTab === "streaks" && <StreaksView streaks={streaks} goals={activeGoals} entries={data.goalEntries} />}
 
-        {activeTab === "settings" && (
+        {cloudDataLoaded && activeTab === "settings" && (
           <SettingsView
             storageMode={storageMode}
             goals={goals}
-            widgetGoalIds={widgetGoalIds}
+            widgetGoalIds={selectedWidgetGoalIds}
             onSaveGoal={upsertGoal}
             onRemoveGoal={removeGoal}
             onChangeWidgetGoalIds={updateWidgetGoalIds}

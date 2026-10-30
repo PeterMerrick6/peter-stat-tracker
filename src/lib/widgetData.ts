@@ -44,7 +44,7 @@ export function loadWidgetGoalIds(goals: Goal[]): string[] {
       .filter((goalId): goalId is string => typeof goalId === "string" && activeIds.has(goalId))
       .slice(0, WIDGET_GOAL_LIMIT);
 
-    return selected.length ? selected : activeGoalIds;
+    return selected;
   } catch {
     return activeGoalIds;
   }
@@ -56,7 +56,7 @@ export function saveWidgetGoalIds(goalIds: string[]): void {
 
 export function buildWidgetSnapshot(goals: Goal[], entries: GoalEntry[], selectedGoalIds: string[]): WidgetSnapshot {
   const activeGoals = sortGoals(goals).filter((goal) => goal.active && !goal.archivedAt);
-  const selectedIds = selectedGoalIds.length ? selectedGoalIds : getDefaultWidgetGoalIds(activeGoals);
+  const selectedIds = selectedGoalIds;
   const selectedGoals = selectedIds
     .map((goalId) => activeGoals.find((goal) => goal.id === goalId))
     .filter((goal): goal is Goal => Boolean(goal))
