@@ -171,6 +171,90 @@ button:disabled {
   gap: 14px;
 }
 
+.report-settings {
+  border-block: 1px solid #ded3c4;
+  padding-block: 16px;
+}
+
+.report-schedule {
+  margin: 6px 0 16px;
+  color: #68746d;
+  font-size: 0.86rem;
+}
+
+.report-fields, .report-habits {
+  display: grid;
+  gap: 10px;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.report-email {
+  display: grid;
+  gap: 6px;
+  font-weight: 700;
+}
+
+.report-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-weight: 700;
+}
+
+.report-toggle input {
+  width: 20px;
+  min-height: 20px;
+  accent-color: #3d7f6b;
+}
+
+.report-habits legend {
+  padding: 8px 0;
+  font-weight: 700;
+}
+
+.report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.report-actions button {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 180px;
+  min-height: 44px;
+  padding: 10px;
+}
+
+.report-preview-button {
+  border: 1px solid #d8ccbc;
+  border-radius: 8px;
+  background: #fffdf9;
+  color: #10231d;
+  font-weight: 700;
+}
+
+.report-error { color: #8a2d1f; overflow-wrap: anywhere; }
+.report-preview {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(100%, 700px);
+  height: min(90vh, 900px);
+  background: #fbfaf7;
+  padding: 12px;
+  border-radius: 8px;
+  gap: 12px;
+}
+.report-preview h2 { font-size: 1.1rem; }
+.report-preview iframe { width: 100%; height: 100%; border: 0; }
+
 .date-row {
   gap: 10px;
 }

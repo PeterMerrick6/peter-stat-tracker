@@ -1,6 +1,15 @@
 import { a, defineData, type ClientSchema } from "@aws-amplify/backend";
 
 const schema = a.schema({
+  ReportSettings: a
+    .model({
+      owner: a.string().authorization((allow) => [allow.owner().to(["read", "delete"])]),
+      enabled: a.boolean().default(false),
+      recipientEmail: a.email().required(),
+      goalIds: a.id().array().required(),
+    })
+    .authorization((allow) => [allow.owner()]),
+
   Goal: a
     .model({
       title: a.string().required(),

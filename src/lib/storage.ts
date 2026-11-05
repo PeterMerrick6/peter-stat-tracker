@@ -39,6 +39,7 @@ export function loadAppData(): AppData {
       : migrateLegacyEntries(goals, parsed.dailyEntries ?? [], parsed.weeklyEntries ?? []);
 
     return {
+      reportSettings: parsed.reportSettings ?? null,
       goals,
       goalEntries,
       dailyEntries: parsed.dailyEntries ?? [],

@@ -28,6 +28,7 @@ import type { AppData, Goal, GoalCadence, GoalEntry, GoalStatus, GoalTargetDirec
 import { addDays, formatFriendlyDate, getRecentDates, getRecentWeekStarts, todayInDenver } from "./lib/date";
 import { loadAppData, saveAppData } from "./lib/storage";
 import { buildStreaks } from "./lib/streaks";
+import { ReportSettingsPanel } from "./components/ReportSettingsPanel";
 import {
   calculateNumericStatus,
   createDefaultGoals,
@@ -51,6 +52,7 @@ const amplifyOutputModules = import.meta.glob("../amplify_outputs.json", {
   import: "default",
 });
 const amplifyOutputs = Object.values(amplifyOutputModules)[0];
+const emailDeliveryConfigured = Boolean((amplifyOutputs as { custom?: { weeklyReports?: { senderConfigured?: boolean } } } | undefined)?.custom?.weeklyReports?.senderConfigured);
 const CloudShell = lazy(async () => {
   const [{ Amplify }, { Authenticator }] = await Promise.all([
     import("aws-amplify"),
@@ -340,6 +342,7 @@ export function AppExperience({
 
         {cloudDataLoaded && activeTab === "settings" && (
           <SettingsView
+            reports={<ReportSettingsPanel goals={goals} entries={data.goalEntries} useCloudData={useCloudData} deliveryConfigured={emailDeliveryConfigured} localSettings={data.reportSettings} onSaveLocal={(reportSettings) => setData((current) => ({ ...current, reportSettings }))} />}
             storageMode={storageMode}
             goals={goals}
             widgetGoalIds={selectedWidgetGoalIds}
@@ -676,6 +679,7 @@ function GoalChart({ goal, entries }: { goal: Goal; entries: GoalEntry[] }) {
 }
 
 function SettingsView({
+  reports,
   storageMode,
   goals,
   widgetGoalIds,
@@ -683,6 +687,7 @@ function SettingsView({
   onRemoveGoal,
   onChangeWidgetGoalIds,
 }: {
+  reports: React.ReactNode;
   storageMode: string;
   goals: Goal[];
   widgetGoalIds: string[];
@@ -781,6 +786,7 @@ function SettingsView({
         </div>
       </div>
 
+      {reports}
       <div className="section-heading compact">
         <h2>Widget goals</h2>
         <small>{widgetGoalIds.length} of {widgetGoalLimit}</small>

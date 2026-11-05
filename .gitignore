@@ -9,3 +9,4 @@ preview-*.err.log
 *.tsbuildinfo
 .env
 .env.*
+artifacts/

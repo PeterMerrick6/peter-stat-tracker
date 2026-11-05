@@ -42,10 +42,18 @@ export type GoalEntry = {
 };
 
 export type AppData = {
+  reportSettings?: ReportSettings | null;
   goals: Goal[];
   goalEntries: GoalEntry[];
   dailyEntries: DailyEntry[];
   weeklyEntries: WeeklyEntry[];
+};
+
+export type ReportSettings = {
+  id?: string;
+  enabled: boolean;
+  recipientEmail: string;
+  goalIds: string[];
 };
 
 export type Streak = {

@@ -1,6 +1,7 @@
 import { generateClient } from "aws-amplify/data";
+import { getCurrentUser } from "aws-amplify/auth";
 import type { Schema } from "../../amplify/data/resource";
-import type { AppData, Goal, GoalEntry } from "../types";
+import type { AppData, Goal, GoalEntry, ReportSettings } from "../types";
 import { createDefaultGoals, migrateLegacyEntries } from "./goals";
 
 const client = generateClient<Schema>();
@@ -51,6 +52,35 @@ export async function saveCloudGoal(goal: Goal, exists: boolean): Promise<void> 
     : await client.models.Goal.create(payload);
 
   throwOnAmplifyErrors(result.errors);
+}
+
+export async function loadReportSettings(): Promise<ReportSettings | null> {
+  const { userId } = await getCurrentUser();
+  const result = await client.models.ReportSettings.get({ id: `weekly-${userId}` });
+  throwOnAmplifyErrors(result.errors);
+  const row = result.data;
+  return row ? {
+    id: row.id,
+    enabled: row.enabled ?? false,
+    recipientEmail: row.recipientEmail,
+    goalIds: (row.goalIds ?? []).filter((id): id is string => typeof id === "string"),
+  } : null;
+}
+
+export async function saveReportSettings(settings: ReportSettings): Promise<ReportSettings> {
+  const { userId } = await getCurrentUser();
+  const id = `weekly-${userId}`;
+  const payload = {
+    recipientEmail: settings.recipientEmail.trim(),
+    enabled: settings.enabled,
+    goalIds: [...new Set(settings.goalIds)],
+  };
+  const result = settings.id
+    ? await client.models.ReportSettings.update({ ...payload, id })
+    : await client.models.ReportSettings.create({ ...payload, id });
+  throwOnAmplifyErrors(result.errors);
+  if (!result.data) throw new Error("Report settings could not be saved.");
+  return { ...settings, ...payload, id: result.data.id };
 }
 
 export async function deleteCloudGoal(goalId: string): Promise<void> {
