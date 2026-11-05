@@ -60,8 +60,10 @@ export function buildWeeklyReport(goals: Goal[], entries: GoalEntry[], goalIds: 
       const status = entry?.status ?? "open";
       const label = entry?.status ?? (entry?.value !== null && entry?.value !== undefined ? "Below minimum" : "Not logged");
       const value = entry?.value !== null && entry?.value !== undefined ? number(entry.value) : "";
+      const shortStatus = { minimum: "Min", normal: "Norm", exceeds: "Excd", logged: "Logged" };
+      const caption = value || (entry?.status ? shortStatus[entry.status] : "-");
       const day = goal.cadence === "weekly" ? "Week" : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][index];
-      return `<td align="center" style="padding:3px;width:${100 / periods.length}%"><div style="font-size:11px;color:#66736b;margin-bottom:5px">${day}</div><div title="${escape(period + ": " + label)}" style="height:28px;background:${colors[status]};border-radius:4px"></div><div style="font-size:11px;margin-top:5px">${escape(value || (entry?.status ? label : "-"))}</div></td>`;
+      return `<td align="center" style="padding:3px;width:${100 / periods.length}%;word-break:break-word"><div style="font-size:11px;color:#66736b;margin-bottom:5px">${day}</div><div title="${escape(period + ": " + label)}" style="height:28px;background:${colors[status]};border-radius:4px"></div><div style="font-size:11px;margin-top:5px">${escape(caption)}</div></td>`;
     }).join("");
     textRows.push(`${goal.title}: ${metric}\n${periods.map((period, index) => `${period}: ${weekEntries[index]?.value ?? ""} ${weekEntries[index]?.status ?? "not complete"}`).join("\n")}`);
     return `<tr><td style="padding:24px 28px;border-bottom:1px solid #e6ebe7"><h2 style="font-size:19px;margin:0 0 6px;color:#183c2f">${escape(goal.title)}</h2>${goal.description ? `<p style="font-size:13px;color:#66736b;margin:0 0 10px">${escape(goal.description)}</p>` : ""}<p style="font-size:13px;margin:0 0 16px">${escape(metric)}</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cells}</tr></table></td></tr>`;

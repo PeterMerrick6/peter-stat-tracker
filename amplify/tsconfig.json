@@ -3,5 +3,11 @@
   "compilerOptions": {
     "composite": true
   },
-  "include": ["**/*.ts"]
+  "include": [
+    "**/*.ts",
+    "../src/types.ts",
+    "../src/lib/date.ts",
+    "../src/lib/goals.ts",
+    "../src/lib/weeklyReport.ts"
+  ]
 }

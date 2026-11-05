@@ -40,7 +40,8 @@ to a 14-day SQS failure queue for inspection.
 
 ## Checks
 
-Run npm test and npm run build. To generate a sample report, bundle and run
+Run npm test, npm run build, and npx tsc -p amplify/tsconfig.json --noEmit.
+To generate a sample report, bundle and run
 scripts/preview-weekly-report.ts with esbuild. Generated previews and screenshots
 belong in artifacts/reports (ignored by Git).
 
