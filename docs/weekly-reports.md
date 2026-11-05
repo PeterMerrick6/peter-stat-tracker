@@ -24,6 +24,28 @@ The schedule remains DISABLED when REPORT_FROM_EMAIL is absent. The app displays
 that delivery setup is pending while allowing preferences to be saved.
 Recipient changes take effect on the next scheduled send. Preview does not send.
 
+## Existing Android Backend
+
+The installed personal Android app uses the original backend stack
+amplify-peterdaily-Peter-sandbox-e0a701e485. Hosting uses the separate main branch
+backend. Keep this existing separation when building Android: generating outputs
+from the hosting app changes Cognito clients and shows a different sign-in/data
+environment.
+
+Before an Android release, generate amplify_outputs.json from the original stack
+and confirm its auth.user_pool_client_id is 3pokhr3v5gcd0kh7lp6o92euq2:
+
+    npx ampx generate outputs --stack amplify-peterdaily-Peter-sandbox-e0a701e485 --profile myprofile --format json --out-dir .
+
+Deploy the same reporting code to that original backend with the verified sender
+environment variable and sandbox identifier Peter. A build folder outside
+OneDrive avoids asset rename locks. If dependencies are shared through a
+node_modules junction, preserveSymlinks must be enabled in that temporary
+backend's tsconfig for its declaration checks.
+
+Report preferences belong to each backend account; configuring one does not
+automatically enable the other. No data migration is performed.
+
 ## Delivery
 
 The scheduled Lambda reads settings and scans goals/entries filtered by their
